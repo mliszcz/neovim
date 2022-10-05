@@ -1,21 +1,23 @@
 name: Release
-on:
-  schedule:
-    - cron: '5 5 * * *'
-  workflow_dispatch:
-    inputs:
-      tag_name:
-        description: 'Tag name for release'
-        required: false
-        default: nightly
-  push:
-    tags:
-      - v[0-9]+.[0-9]+.[0-9]+
+on: [push, pull_request, workflow_dispatch]
+# on:
+#   schedule:
+#     - cron: '5 5 * * *'
+#   workflow_dispatch:
+#     inputs:
+#       tag_name:
+#         description: 'Tag name for release'
+#         required: false
+#         default: nightly
+#   push:
+#     tags:
+#       - v[0-9]+.[0-9]+.[0-9]+
 
 # Build on the oldest supported images, so we have broader compatibility
 # Build with gcc-10 to prevent triggering #14150 (default is still gcc-9 on 20.04)
 jobs:
   linux:
+    if: ${{ false }}
     runs-on: ubuntu-20.04
     outputs:
       version: ${{ steps.build.outputs.version }}
@@ -51,14 +53,30 @@ jobs:
 
   appimage:
     runs-on: ubuntu-20.04
+    container:
+      image: ubuntu:18.04
+      options: --privileged
     steps:
+      - name: Prepare container
+        run: |
+          apt-get update
+          apt-get install -y software-properties-common
+          add-apt-repository -y ppa:ubuntu-toolchain-r/test # for gcc-10
+          add-apt-repository -y ppa:git-core/ppa # for up-to-date git
+          apt-get update
+          apt-get install -y git gcc-10
+          # Workaround for:
+          # fatal: detected dubious ownership in repository at '/__w/neovim/neovim'
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # Fuse is required for linuxdeploy:
+          apt-get install fuse libfuse2
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake build-essential cmake gettext libtool-bin locales ninja-build pkg-config unzip
+          apt-get update
+          apt-get install -y autoconf automake build-essential cmake gettext libtool-bin locales ninja-build pkg-config unzip
       - if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != 'nightly')
         run: CC=gcc-10 make appimage-latest
       - if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name == 'nightly')
@@ -69,9 +87,10 @@ jobs:
           path: |
             build/bin/nvim.appimage
             build/bin/nvim.appimage.zsync
-          retention-days: 1
+          retention-days: 90
 
   macOS:
+    if: ${{ false }}
     runs-on: macos-11
     steps:
       - uses: actions/checkout@v3
@@ -126,6 +145,7 @@ jobs:
           retention-days: 1
 
   windows:
+    if: ${{ false }}
     runs-on: windows-2019
     env:
       DEPS_BUILD_DIR: ${{ format('{0}/nvim-deps', github.workspace) }}
@@ -149,6 +169,7 @@ jobs:
           retention-days: 1
 
   publish:
+    if: ${{ false }}
     needs: [linux, appimage, macOS, windows]
     runs-on: ubuntu-latest
     env:
@@ -228,6 +249,7 @@ jobs:
             gh release create stable $PRERELEASE --notes-file "$RUNNER_TEMP/notes.md" --title "$SUBJECT" --target $GITHUB_SHA nvim-macos/* nvim-linux64/* appimage/* nvim-win64/*
           fi
   publish-winget:
+    if: ${{ false }}
     needs: publish
     runs-on: windows-latest
     steps:
